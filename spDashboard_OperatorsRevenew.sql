@@ -1,43 +1,45 @@
+/****** Object:  StoredProcedure [dbo].[spDashboard_OperatorsRevenew]    Script Date: 2019-01-30 20:18:06 ÷. ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
 -- =============================================
--- Author:		MS
--- Create date: 2016-05-04
--- Description:
--- exec [dbo].[spDashboard_OperatorsRevenew] @DateFrom = '2015-04-01', @DateTo= '2015-05-31', @MaxRows = -10, @BranchID = 1
+-- Description:	Sales by POS_Users for chart reports.
+-- exec [dbo].[spDashboard_OperatorsRevenew] @DateFrom = '2015-04-01', @DateTo= '2015-04-30', @MaxRows = -10, @BranchID = 2
 -- =============================================
 
-CREATE PROCEDURE [dbo].[spDashboard_OperatorsRevenew]
-	@DateFrom date = NULL,
-	@DateTo date = NULL,
-	@UserID INTEGER = NULL,
-	@MaxRows INTEGER = 10,
+ALTER PROCEDURE [dbo].[spDashboard_OperatorsRevenew]
+	@DateFrom  datetime = NULL,
+	@DateTo datetime = NULL,
+	@UserID INTEGER=NULL,
+	@MaxRows INTEGER=10,
 	@BranchID INT = NULL
 AS
 BEGIN
 	SET NOCOUNT ON;
 
-	SET @DateFrom = coalesce (@DateFrom, Getdate())
-	SET @DateTo = coalesce (@DateTo, Getdate())
+	SET @DateFrom = coalesce (@DateFrom, convert(varchar(10), Getdate(), 121)) + ' 00:00:00';
+	SET @DateTo = coalesce (@DateTo, convert(varchar(10), Getdate(), 121)) + ' 23:59:59';
 
 	SELECT TOP(ABS(@MaxRows)) * 
-	FROM (	SELECT
-				Value = SUM(RowFinalPrice),
-				Name = sesd.FirstName + ' ' +sesd.LastName,
-				ToolTip =	'<div>Operator: ' + cast (sesd.FirstName + ' ' +sesd.LastName as varchar (100))+ 
+	FROM (	SELECT 	
+				Value = SUM (sd.RowFinalPrice),
+				Name = u.FirstName + ' ' + u.LastName,
+				ToolTip =	'<div>' + u.FirstName + ' ' + u.LastName + 
+							'<br />Amount: ' + cast (sum(sd.RowFinalPrice) as varchar)+ 
 							'<br />From: ' + convert(varchar(10), @DateFrom, 103) +
 							'<br />To: ' + convert(varchar(10), @DateTo, 103) +
-							'</div>' 
-			FROM Sales s
-				INNER JOIN SaleDetails sd on sd.SaleUID = s.UID
-				INNER JOIN vwSessionDetails sesd on sesd.UID=s.ClosedSessionDetailUID
-				INNER JOIN SaleItems si on si.UID = sd.SaleItemUID
-				INNER JOIN Products p on si.ProductUID = p.ID
-			WHERE 
-				s.Voided = 0 AND sd.Voided = 0 
-				AND s.ClosedOn >= @DateFrom AND s.ClosedOn < DATEADD (d , 1 , @DateTo)
-				AND (@BranchID = -1 OR @BranchID = sesd.BranchID)
-			GROUP BY sesd.FirstName, sesd.LastName) as tbl
-	ORDER BY 
-		CASE WHEN @MaxRows <0 THEN Value  END ASC,
-		CASE WHEN @MaxRows >0 THEN Value  END DESC
+							'</div>'
+			FROM NationalExpress2Transactions.dbo.SaleDetails sd 
+				INNER JOIN NationalExpress2Transactions.dbo.Sales s on s.UID=sd.SaleUID
+				INNER JOIN NationalExpress2Transactions.dbo.SessionDetails ss on ss.UID = s.ClosedSessionDetailUID
+				INNER JOIN POS_Users u on u.ID= ss.CreatedBy
+			WHERE 	s.voided = 0 and sd.voided = 0 and
+					(@BranchID is null or ss.BranchID = @BranchID) and 
+					sd.CreatedOn > @DateFrom and  
+					sd.CreatedOn < @DateTo
+			GROUP BY u.FirstName, u.LastName, u.ID) as tbl2
+	Order BY 
+	CASE WHEN @MaxRows <0 THEN Value  END ASC,
+	CASE WHEN @MaxRows >0 THEN Value  END DESC
 END
-GO
